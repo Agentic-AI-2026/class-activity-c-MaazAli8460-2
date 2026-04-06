@@ -3,19 +3,44 @@
 # STABLE MCP SERVER using Tavily API
 # ============================================================
 
-from mcp.server.fastmcp import FastMCP
-from tavily import TavilyClient
+import importlib
+import os
 
-# Replace with your actual key from tavily.com
-TAVILY_API_KEY = ""
+from mcp.server.fastmcp import FastMCP
 
 mcp = FastMCP("search")
-tavily = TavilyClient(api_key=TAVILY_API_KEY)
+
+
+def _try_load_dotenv() -> None:
+    """Load .env values if python-dotenv is installed."""
+    try:
+        load_dotenv = getattr(importlib.import_module("dotenv"), "load_dotenv")
+        load_dotenv()
+    except Exception:
+        return
+
+
+def _get_tavily_client():
+    """Create Tavily client from env var TAVILY_API_KEY."""
+    _try_load_dotenv()
+    api_key = os.getenv("TAVILY_API_KEY", "").strip()
+    if not api_key:
+        return None, "TAVILY_API_KEY is missing. Add it in .env or environment variables."
+
+    try:
+        TavilyClient = getattr(importlib.import_module("tavily"), "TavilyClient")
+        return TavilyClient(api_key=api_key), ""
+    except Exception as exc:
+        return None, f"Tavily client initialization error: {exc}"
 
 @mcp.tool()
 def search_web(query: str) -> str:
     """Search the web for real-time information.
     Use this for factual questions, historical data, or general lookups."""
+    tavily, client_error = _get_tavily_client()
+    if tavily is None:
+        return f"Search error: {client_error}"
+
     try:
         # depth="basic" is faster and costs 1 credit
         response = tavily.search(query=query, search_depth="basic", max_results=3)
@@ -35,6 +60,10 @@ def search_web(query: str) -> str:
 def search_news(query: str) -> str:
     """Search for the latest news articles on a topic.
     Use this for recent events, announcements, or developments within the last month."""
+    tavily, client_error = _get_tavily_client()
+    if tavily is None:
+        return f"News search error: {client_error}"
+
     try:
         # topic="news" triggers Tavily's news-specific crawler
         response = tavily.search(query=query, topic="news", search_depth="basic", max_results=3)
